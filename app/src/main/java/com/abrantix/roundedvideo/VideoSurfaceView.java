@@ -35,6 +35,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
+import java.nio.ShortBuffer;
 
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
@@ -59,9 +60,11 @@ import javax.microedition.khronos.opengles.GL10;
  */
 public class VideoSurfaceView extends GLSurfaceView {
     private static final String TAG = "VideoSurfaceView";
+    private static final boolean USE_MULTI_SAMPLING = true;
 
     VideoRenderer mRenderer;
     MediaPlayer mMediaPlayer = null;
+    MultiSampleEGLConfigChooser mMultiSamplingConfigChooser;
 
     public VideoSurfaceView(Context context) {
         super(context);
@@ -80,18 +83,41 @@ public class VideoSurfaceView extends GLSurfaceView {
 
     private void init(@NonNull VideoRenderer videoRender) {
         setEGLContextClientVersion(2);
-        setTranslucent(true);
+
+        setupEGLConfig(true, USE_MULTI_SAMPLING);
+        if (USE_MULTI_SAMPLING && mMultiSamplingConfigChooser != null) {
+            videoRender.setUsesCoverageAa(mMultiSamplingConfigChooser.usesCoverageAa());
+        }
         mRenderer = videoRender;
         setRenderer(mRenderer);
         setRenderMode(RENDERMODE_WHEN_DIRTY);
     }
 
-    private void setTranslucent(boolean translucent) {
+    /**
+     * Make sure the {@link android.view.SurfaceHolder} pixel format matches your EGL configuration.
+     *
+     * @param translucent true if the view should show views below if parts of the view area are
+     *                    transparent. Has performance implications.
+     * @param multisampling true if the GL Surface should perform multi-sampling. This avoids hard
+     *                      edges on the geometry. Has performance implications.
+     */
+    private void setupEGLConfig(boolean translucent, boolean multisampling) {
         if (translucent) {
             setZOrderOnTop(true);
-            setEGLConfigChooser(8, 8, 8, 8, 16, 0);
+            if (multisampling) {
+                mMultiSamplingConfigChooser = new MultiSampleEGLConfigChooser();
+                setEGLConfigChooser(mMultiSamplingConfigChooser);
+            } else {
+                setEGLConfigChooser(8, 8, 8, 8, 16, 0);
+            }
             this.getHolder().setFormat(PixelFormat.RGBA_8888);
         } else {
+            if (multisampling) {
+                mMultiSamplingConfigChooser = new MultiSampleEGLConfigChooser();
+                setEGLConfigChooser(mMultiSamplingConfigChooser);
+            } else {
+                setEGLConfigChooser(5, 6, 5, 0, 16, 0);
+            }
             this.getHolder().setFormat(PixelFormat.RGB_565);
         }
     }
@@ -132,9 +158,12 @@ public class VideoSurfaceView extends GLSurfaceView {
         private static String TAG = "VideoRender";
 
         private static final int FLOAT_SIZE_BYTES = 4;
+        private static final int SHORT_SIZE_BYTES = 2;
         private static final int TRIANGLE_VERTICES_DATA_STRIDE_BYTES = 5 * FLOAT_SIZE_BYTES;
         private static final int TRIANGLE_VERTICES_DATA_POS_OFFSET = 0;
         private static final int TRIANGLE_VERTICES_DATA_UV_OFFSET = 3;
+
+        private final boolean USE_DRAW_ELEMENTS = true;
 
         private final String mVertexShader =
                 "uniform mat4 uMVPMatrix;\n" +
@@ -174,11 +203,14 @@ public class VideoSurfaceView extends GLSurfaceView {
         private boolean mUpdateSurface = false;
 
         private float[] mTriangleVerticesData;
+        private short[] mTriangleIndicesData;
         private FloatBuffer mTriangleVertices;
+        private ShortBuffer mTriangleIndices;
         private RectF mRoundRadius = new RectF();
         private GLRoundedGeometry mRoundedGeometry;
         private final Point mViewPortSize = new Point();
         private final RectF mViewPortGLBounds;
+        private boolean mUsesCoverageAa = false;
 
         public VideoRenderer(@NonNull GLSurfaceView view) {
             this(view, new GLRoundedGeometry(), new RectF(-1, 1, 1, -1));
@@ -195,6 +227,10 @@ public class VideoSurfaceView extends GLSurfaceView {
             Matrix.setIdentityM(mSTMatrix, 0);
         }
 
+        public void setUsesCoverageAa(boolean usesCoverageAa) {
+            mUsesCoverageAa = usesCoverageAa;
+        }
+
         public void setCornerRadius(float topLeft, float topRight, float bottomRight,
                                     float bottomLeft) {
             mRoundRadius.left = topLeft;
@@ -207,8 +243,13 @@ public class VideoSurfaceView extends GLSurfaceView {
         }
 
         private void updateVertexData() {
-            mTriangleVerticesData = mRoundedGeometry.generateVertexData(mRoundRadius,
-                    mViewPortGLBounds, mViewPortSize);
+             final GLRoundedGeometry.GeometryArrays arrays =
+                     mRoundedGeometry.generateVertexData(
+                             mRoundRadius,
+                             mViewPortGLBounds,
+                             mViewPortSize);
+            mTriangleVerticesData = arrays.triangleVertices;
+            mTriangleIndicesData = arrays.triangleIndices;
             if (mTriangleVertices != null) {
                 mTriangleVertices.clear();
             } else {
@@ -216,7 +257,15 @@ public class VideoSurfaceView extends GLSurfaceView {
                         mTriangleVerticesData.length * FLOAT_SIZE_BYTES)
                         .order(ByteOrder.nativeOrder()).asFloatBuffer();
             }
+            if (mTriangleIndices != null) {
+                mTriangleIndices.clear();
+            } else {
+                mTriangleIndices = ByteBuffer.allocateDirect(
+                        mTriangleIndicesData.length * SHORT_SIZE_BYTES)
+                        .order(ByteOrder.nativeOrder()).asShortBuffer();
+            }
             mTriangleVertices.put(mTriangleVerticesData).position(0);
+            mTriangleIndices.put(mTriangleIndicesData).position(0);
         }
 
         public void setMediaPlayer(MediaPlayer player) {
@@ -244,7 +293,13 @@ public class VideoSurfaceView extends GLSurfaceView {
             }
 
             GLES20.glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-            GLES20.glClear(GLES20.GL_DEPTH_BUFFER_BIT | GLES20.GL_COLOR_BUFFER_BIT);
+            int clearMask = GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT;
+            if (mUsesCoverageAa) { // Tegra weirdness
+                final int GL_COVERAGE_BUFFER_BIT_NV = 0x8000;
+                clearMask |= GL_COVERAGE_BUFFER_BIT_NV;
+            }
+            GLES20.glClear(clearMask);
+
             GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S,
                     GLES20.GL_CLAMP_TO_EDGE);
             GLES20.glTexParameterf(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T,
@@ -275,8 +330,16 @@ public class VideoSurfaceView extends GLSurfaceView {
             GLES20.glUniformMatrix4fv(muMVPMatrixHandle, 1, false, mMVPMatrix, 0);
             GLES20.glUniformMatrix4fv(muSTMatrixHandle, 1, false, mSTMatrix, 0);
 
-            GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, mTriangleVerticesData.length / 5);
-            checkGlError("glDrawArrays");
+            // Alternatively we can use
+            //
+            // GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, mTriangleVerticesData.length / 5);
+            //
+            // but with the current geometry setup it ends up drawing a lot of 'degenerate'
+            // triangles which represents more work for our shaders, especially the fragment one.
+            GLES20.glDrawElements(GLES20.GL_TRIANGLES, mTriangleIndicesData.length,
+                    GL10.GL_UNSIGNED_SHORT, mTriangleIndices);
+
+            checkGlError("glDrawElements");
             GLES20.glFinish();
         }
 

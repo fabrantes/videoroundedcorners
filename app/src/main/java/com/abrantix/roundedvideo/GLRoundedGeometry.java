@@ -29,13 +29,29 @@ public class GLRoundedGeometry {
     private float[] mBottomRightRadius = new float[2];
     private float[] mBottomLeftRadius = new float[2];
 
-    public float[] generateVertexData(@NonNull RectF radii, @NonNull RectF viewPortGLBounds,
-                                      @NonNull Point viewPortPxSize) {
+    /**
+     * @see #generateVertexData(RectF, RectF, Point, float)
+     */
+    @NonNull
+    public GeometryArrays generateVertexData(@NonNull RectF radii, @NonNull RectF viewPortGLBounds,
+                                             @NonNull Point viewPortPxSize) {
         return generateVertexData(radii, viewPortGLBounds, viewPortPxSize, 0f);
     }
 
-    public float[] generateVertexData(@NonNull RectF radii, @NonNull RectF viewPortGLBounds,
-                                      @NonNull Point viewPortPxSize, float z) {
+    /**
+     * Generates a {@link GeometryArrays} object with arrays containing the resulting geometry
+     * vertices and the corresponding triangle indexes.
+     *
+     * @param radii the corner radius of each corner. left is topLeft, top is topRight, right is
+     *              rightBottom and bottom is leftBottom.
+     * @param viewPortGLBounds the bounds of the GL viewport in GL scalar units.
+     * @param viewPortPxSize the size of the view port in pixels.
+     * @param z the z coordinate for the z-plane geometry.
+     * @return an object with the resulting geometry.
+     */
+    @NonNull
+    public GeometryArrays generateVertexData(@NonNull RectF radii, @NonNull RectF viewPortGLBounds,
+                                             @NonNull Point viewPortPxSize, float z) {
         final float x0 = viewPortGLBounds.left;
         final float x1 = viewPortGLBounds.right;
         final float y0 = viewPortGLBounds.bottom;
@@ -84,66 +100,77 @@ public class GLRoundedGeometry {
         // Each vertex has 5 floats (xyz + uv)
         // 5 squares (each has 4 vertices)
         // 4 rounded corners (each has X triangles, each triangle has 3 vertices)
-        final int trianglesPerCorner = 5;
+        final int trianglesPerCorner = 6;
         final int floatsPerTriangle = 3 * 5;
         final int floatsPerSquare = 4 * 5;
-        final int vertexCount = 5 * floatsPerSquare + 4 * trianglesPerCorner * floatsPerTriangle;
-        final float[] vertices = new float[vertexCount];
-        int offset = 0;
+        final int shortsPerTriangle = 3;
+        final int shortsPerSquare = 2 * shortsPerTriangle;
+        final int verticesSize = 5 * floatsPerSquare + 4 * trianglesPerCorner * floatsPerTriangle;
+        final int indicesSize = 5 * shortsPerSquare + 4 * trianglesPerCorner * shortsPerTriangle;
+        final float[] vertices = new float[verticesSize];
+        final short[] indices = new short[indicesSize];
+        final GeometryArrays geoArrays = new GeometryArrays(vertices, indices);
 
         // Inner center rect
-        addRect(vertices, offset, new float[][]{
+        addRect(geoArrays, new float[][]{
                         mInnerTopLeft, mInnerTopRight, mInnerBottomLeft, mInnerBottomRight},
                 viewPortGLBounds, z);
-        offset += floatsPerSquare;
+        geoArrays.verticesOffset += floatsPerSquare;
+        geoArrays.indicesOffset += shortsPerSquare;
 
         // Left rect
-        addRect(vertices, offset, new float[][]{
+        addRect(geoArrays, new float[][]{
                         mLeftTop, mInnerTopLeft, mLeftBottom, mInnerBottomLeft},
                 viewPortGLBounds, z);
-        offset += floatsPerSquare;
+        geoArrays.verticesOffset += floatsPerSquare;
+        geoArrays.indicesOffset += shortsPerSquare;
 
         // Right rect
-        addRect(vertices, offset, new float[][]{
+        addRect(geoArrays, new float[][]{
                         mInnerTopRight, mRightTop, mInnerBottomRight, mRightBottom},
                 viewPortGLBounds, z);
-        offset += floatsPerSquare;
+        geoArrays.verticesOffset += floatsPerSquare;
+        geoArrays.indicesOffset += shortsPerSquare;
 
         // Top rect
-        addRect(vertices, offset, new float[][]{
+        addRect(geoArrays, new float[][]{
                         mTopLeft, mInnerTopLeft, mTopRight, mInnerTopRight},
                 viewPortGLBounds, z);
-        offset += floatsPerSquare;
+        geoArrays.verticesOffset += floatsPerSquare;
+        geoArrays.indicesOffset += shortsPerSquare;
 
         // Bottom rect
-        addRect(vertices, offset, new float[][]{
+        addRect(geoArrays, new float[][]{
                         mInnerBottomLeft, mBottomLeft, mInnerBottomRight, mBottomRight},
                 viewPortGLBounds, z);
-        offset += floatsPerSquare;
+        geoArrays.verticesOffset += floatsPerSquare;
+        geoArrays.indicesOffset += shortsPerSquare;
 
         // These assume uniform corners (i.e. same radius on both axis)
         // Top left corner
-        addRoundedCorner(vertices, offset, mInnerTopLeft, mTopLeftRadius, (float) Math.PI,
+        addRoundedCorner(geoArrays, mInnerTopLeft, mTopLeftRadius, (float) Math.PI,
                 (float) (Math.PI / 2.0), trianglesPerCorner, viewPortGLBounds, z);
-        offset += trianglesPerCorner * floatsPerTriangle;
+        geoArrays.verticesOffset += trianglesPerCorner * floatsPerTriangle;
+        geoArrays.indicesOffset += trianglesPerCorner * shortsPerTriangle;
 
         // Top right corner
-        addRoundedCorner(vertices, offset, mInnerTopRight, mTopRightRadius,
-                (float) (Math.PI / 2), 0f, trianglesPerCorner, viewPortGLBounds, z);
-        offset += trianglesPerCorner * floatsPerTriangle;
+        addRoundedCorner(geoArrays, mInnerTopRight, mTopRightRadius, (float) (Math.PI / 2), 0f,
+                trianglesPerCorner, viewPortGLBounds, z);
+        geoArrays.verticesOffset += trianglesPerCorner * floatsPerTriangle;
+        geoArrays.indicesOffset += trianglesPerCorner * shortsPerTriangle;
 
         // Bottom right corner
-        addRoundedCorner(vertices, offset, mInnerBottomRight,
-                mBottomRightRadius, (float) (Math.PI * 3.0 / 2.0), (float) Math.PI * 2,
-                trianglesPerCorner, viewPortGLBounds, z);
-        offset += trianglesPerCorner * floatsPerTriangle;
+        addRoundedCorner(geoArrays, mInnerBottomRight, mBottomRightRadius,
+                (float) (Math.PI * 3.0 / 2.0), (float) Math.PI * 2, trianglesPerCorner,
+                viewPortGLBounds, z);
+        geoArrays.verticesOffset += trianglesPerCorner * floatsPerTriangle;
+        geoArrays.indicesOffset += trianglesPerCorner * shortsPerTriangle;
 
         // Bottom left corner
-        addRoundedCorner(vertices, offset, mInnerBottomLeft,
-                mBottomLeftRadius, (float) Math.PI, (float) (Math.PI * 3.0 / 2.0),
-                trianglesPerCorner, viewPortGLBounds, z);
+        addRoundedCorner(geoArrays, mInnerBottomLeft, mBottomLeftRadius, (float) Math.PI,
+                (float) (Math.PI * 3.0 / 2.0), trianglesPerCorner, viewPortGLBounds, z);
 
-        return vertices;
+        return new GeometryArrays(vertices, indices);
     }
 
     /**
@@ -151,32 +178,47 @@ public class GLRoundedGeometry {
      * in must have the required length to add the geometry points (5 floats for each vertex). Also
      * the coordinates of the rect corners should already be in the view port space.
      *
-     * @param vertices the array in which vertex data will be inserted.
-     * @param offset the offset in the array where to add the vertex data.
+     * @param geoArrays an object containing the vertex and index data arrays and their current
+     *                  offsets.
      * @param rectPoints an array of corner points defining the rectangle. index 0 is the x
      *                   coordinate and index 1 the y coordinate.
      * @param viewPort the bounds of the current GL viewport, this is used to calculate the texture
      *                 mapping.
      * @param z the z coordinate.
      */
-    private void addRect(float[] vertices, int offset, float[][] rectPoints,
-                         @NonNull RectF viewPort, float z) {
+    private void addRect(@NonNull GeometryArrays geoArrays,
+                         @NonNull float[][] rectPoints,
+                         @NonNull RectF viewPort,
+                         float z) {
+        final float[] vertices = geoArrays.triangleVertices;
+        final short[] indices = geoArrays.triangleIndices;
+        final int indicesOffset = geoArrays.indicesOffset;
+        final int verticesOffset = geoArrays.verticesOffset;
         int rectPointIdx = 0;
         for (final float[] rectPoint : rectPoints) {
              // 5 values [xyzuv] per vertex
-            final int currentOffset = offset + rectPointIdx * 5;
+            final int currentVertexOffset = verticesOffset + rectPointIdx * 5;
 
             // XYZ (vertex space coordinates
-            vertices[currentOffset + 0] = rectPoint[0];
-            vertices[currentOffset + 1] = rectPoint[1];
-            vertices[currentOffset + 2] = z;
+            vertices[currentVertexOffset + 0] = rectPoint[0];
+            vertices[currentVertexOffset + 1] = rectPoint[1];
+            vertices[currentVertexOffset + 2] = z;
 
             // UV (texture mapping)
-            vertices[currentOffset + 3] = (rectPoint[0] - viewPort.left) / viewPort.width();
-            vertices[currentOffset + 4] = (rectPoint[1] - viewPort.bottom) / -viewPort.height();
+            vertices[currentVertexOffset + 3] = (rectPoint[0] - viewPort.left) / viewPort.width();
+            vertices[currentVertexOffset + 4] = (rectPoint[1] - viewPort.bottom) / -viewPort.height();
 
             rectPointIdx++;
         }
+
+        // Index our triangles -- tell where each triangle vertex is
+        final int initialIdx = verticesOffset / 5;
+        indices[indicesOffset + 0] = (short) (initialIdx);
+        indices[indicesOffset + 1] = (short) (initialIdx + 1);
+        indices[indicesOffset + 2] = (short) (initialIdx + 2);
+        indices[indicesOffset + 3] = (short) (initialIdx + 1);
+        indices[indicesOffset + 4] = (short) (initialIdx + 2);
+        indices[indicesOffset + 5] = (short) (initialIdx + 3);
     }
 
     /**
@@ -188,8 +230,8 @@ public class GLRoundedGeometry {
      * (5 floats for each vertex). Also the coordinates of the rect corners should already be in
      * the view port space.
      *
-     * @param vertices the array in which vertex data will be inserted.
-     * @param offset the offset in the array where to add the vertex data.
+     * @param geoArrays an object containing the vertex and index data arrays and their current
+     *                  offsets.
      * @param center the center point where all triangles will start.
      * @param radius the desired radius in the x and y axis, in viewport dimensions.
      * @param rads0 the initial angle.
@@ -199,8 +241,7 @@ public class GLRoundedGeometry {
      *                 mapping.
      * @param z the z coordinate.
      */
-    private void addRoundedCorner(@NonNull float[] vertices,
-                                  int offset,
+    private void addRoundedCorner(@NonNull GeometryArrays geoArrays,
                                   @NonNull float[] center,
                                   float[] radius,
                                   float rads0,
@@ -208,8 +249,12 @@ public class GLRoundedGeometry {
                                   int triangles,
                                   @NonNull RectF viewPort,
                                   float z) {
+        final float[] vertices = geoArrays.triangleVertices;
+        final short[] indices = geoArrays.triangleIndices;
+        final int verticesOffset = geoArrays.verticesOffset;
+        final int indicesOffset = geoArrays.indicesOffset;
         for (int i = 0; i < triangles; i++) {
-            final int currentOffset = offset + i * 15 /* each triangle is 3 * xyzuv */;
+            final int currentOffset = verticesOffset + i * 15 /* each triangle is 3 * xyzuv */;
             final float rads = rads0 + (rads1 - rads0) * (i / (float) triangles);
             final float radsNext = rads0 + (rads1 - rads0) * ((i + 1) / (float) triangles);
 
@@ -239,6 +284,24 @@ public class GLRoundedGeometry {
                     (vertices[currentOffset + 10] - viewPort.left) / viewPort.width();
             vertices[currentOffset + 14] =
                     (vertices[currentOffset + 11] - viewPort.bottom) / -viewPort.height();
+
+            // Index our triangles -- tell where each triangle vertex is
+            final int initialIdx = currentOffset / 5;
+            indices[indicesOffset + i * 3 + 0] = (short) (initialIdx);
+            indices[indicesOffset + i * 3 + 1] = (short) (initialIdx + 1);
+            indices[indicesOffset + i * 3 + 2] = (short) (initialIdx + 2);
+        }
+    }
+
+    public static class GeometryArrays {
+        public float[] triangleVertices;
+        public short[] triangleIndices;
+        public int verticesOffset = 0;
+        public int indicesOffset = 0;
+
+        public GeometryArrays(@NonNull float[] vertices, @NonNull short[] indices) {
+            triangleVertices = vertices;
+            triangleIndices = indices;
         }
     }
 }

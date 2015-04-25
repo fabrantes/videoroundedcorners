@@ -38,10 +38,6 @@ public class MultiSampleEGLConfigChooser implements GLSurfaceView.EGLConfigChoos
                 EGL10.EGL_NONE
         };
 
-        if (!egl.eglChooseConfig(display, configSpec, null, 0,
-                mValue)) {
-            throw new IllegalArgumentException("eglChooseConfig failed");
-        }
         int numConfigs = mValue[0];
 
         if (numConfigs <= 0) {
@@ -64,9 +60,6 @@ public class MultiSampleEGLConfigChooser implements GLSurfaceView.EGLConfigChoos
                     EGL10.EGL_NONE
             };
 
-            if (!egl.eglChooseConfig(display, configSpec, null, 0, mValue)) {
-                throw new IllegalArgumentException("2nd eglChooseConfig failed");
-            }
             numConfigs = mValue[0];
 
             if (numConfigs <= 0) {

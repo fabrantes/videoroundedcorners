@@ -101,11 +101,11 @@ public class GLRoundedGeometry {
         // 5 squares (each has 4 vertices)
         // 4 rounded corners (each has X triangles, each triangle has 3 vertices)
         final int trianglesPerCorner = 6;
-        final int floatsPerTriangle = 3 * 5;
+        final int floatsPerRoundedCorner = (trianglesPerCorner + 2) * 5;
         final int floatsPerSquare = 4 * 5;
         final int shortsPerTriangle = 3;
         final int shortsPerSquare = 2 * shortsPerTriangle;
-        final int verticesSize = 5 * floatsPerSquare + 4 * trianglesPerCorner * floatsPerTriangle;
+        final int verticesSize = 5 * floatsPerSquare + 4 * floatsPerRoundedCorner;
         final int indicesSize = 5 * shortsPerSquare + 4 * trianglesPerCorner * shortsPerTriangle;
         final float[] vertices = new float[verticesSize];
         final short[] indices = new short[indicesSize];
@@ -150,20 +150,20 @@ public class GLRoundedGeometry {
         // Top left corner
         addRoundedCorner(geoArrays, mInnerTopLeft, mTopLeftRadius, (float) Math.PI,
                 (float) (Math.PI / 2.0), trianglesPerCorner, viewPortGLBounds, z);
-        geoArrays.verticesOffset += trianglesPerCorner * floatsPerTriangle;
+        geoArrays.verticesOffset += floatsPerRoundedCorner;
         geoArrays.indicesOffset += trianglesPerCorner * shortsPerTriangle;
 
         // Top right corner
         addRoundedCorner(geoArrays, mInnerTopRight, mTopRightRadius, (float) (Math.PI / 2), 0f,
                 trianglesPerCorner, viewPortGLBounds, z);
-        geoArrays.verticesOffset += trianglesPerCorner * floatsPerTriangle;
+        geoArrays.verticesOffset += floatsPerRoundedCorner;
         geoArrays.indicesOffset += trianglesPerCorner * shortsPerTriangle;
 
         // Bottom right corner
         addRoundedCorner(geoArrays, mInnerBottomRight, mBottomRightRadius,
                 (float) (Math.PI * 3.0 / 2.0), (float) Math.PI * 2, trianglesPerCorner,
                 viewPortGLBounds, z);
-        geoArrays.verticesOffset += trianglesPerCorner * floatsPerTriangle;
+        geoArrays.verticesOffset += floatsPerRoundedCorner;
         geoArrays.indicesOffset += trianglesPerCorner * shortsPerTriangle;
 
         // Bottom left corner
@@ -254,42 +254,51 @@ public class GLRoundedGeometry {
         final int verticesOffset = geoArrays.verticesOffset;
         final int indicesOffset = geoArrays.indicesOffset;
         for (int i = 0; i < triangles; i++) {
-            final int currentOffset = verticesOffset + i * 15 /* each triangle is 3 * xyzuv */;
+            // final int currentOffset = verticesOffset + i * 15 /* each triangle is 3 * xyzuv */;
+            final int currentOffset = verticesOffset + i * 5 + (i > 0 ? 2 * 5 : 0);
             final float rads = rads0 + (rads1 - rads0) * (i / (float) triangles);
             final float radsNext = rads0 + (rads1 - rads0) * ((i + 1) / (float) triangles);
+            final int triangleEdge2Offset;
 
-            // XYZUV - center point
-            vertices[currentOffset + 0] = center[0];
-            vertices[currentOffset + 1] = center[1];
-            vertices[currentOffset + 2] = z;
-            vertices[currentOffset + 3] =
-                    (vertices[currentOffset + 0] - viewPort.left) / viewPort.width();
-            vertices[currentOffset + 4] =
-                    (vertices[currentOffset + 1] - viewPort.bottom) / -viewPort.height();
+            if (i == 0) {
+                // XYZUV - center point
+                vertices[currentOffset + 0] = center[0];
+                vertices[currentOffset + 1] = center[1];
+                vertices[currentOffset + 2] = z;
+                vertices[currentOffset + 3] =
+                        (vertices[currentOffset + 0] - viewPort.left) / viewPort.width();
+                vertices[currentOffset + 4] =
+                        (vertices[currentOffset + 1] - viewPort.bottom) / -viewPort.height();
 
-            // XYZUV - triangle edge 1
-            vertices[currentOffset + 5] = center[0] + radius[0] * (float) Math.cos(rads);
-            vertices[currentOffset + 6] = center[1] + radius[1] * (float) Math.sin(rads);
-            vertices[currentOffset + 7] = z;
-            vertices[currentOffset + 8] =
-                    (vertices[currentOffset + 5] - viewPort.left) / viewPort.width();
-            vertices[currentOffset + 9] =
-                    (vertices[currentOffset + 6] - viewPort.bottom) / -viewPort.height();
+                // XYZUV - triangle edge 1
+                vertices[currentOffset + 5] = center[0] + radius[0] * (float) Math.cos(rads);
+                vertices[currentOffset + 6] = center[1] + radius[1] * (float) Math.sin(rads);
+                vertices[currentOffset + 7] = z;
+                vertices[currentOffset + 8] =
+                        (vertices[currentOffset + 5] - viewPort.left) / viewPort.width();
+                vertices[currentOffset + 9] =
+                        (vertices[currentOffset + 6] - viewPort.bottom) / -viewPort.height();
+
+                triangleEdge2Offset = 10;
+            } else {
+                triangleEdge2Offset = 0;
+            }
 
             // XYZUV - triangle edge 2
-            vertices[currentOffset + 10] = center[0] + radius[0] * (float) Math.cos(radsNext);
-            vertices[currentOffset + 11] = center[1] + radius[1] * (float) Math.sin(radsNext);
-            vertices[currentOffset + 12] = z;
-            vertices[currentOffset + 13] =
-                    (vertices[currentOffset + 10] - viewPort.left) / viewPort.width();
-            vertices[currentOffset + 14] =
-                    (vertices[currentOffset + 11] - viewPort.bottom) / -viewPort.height();
+            final int edge2Offset = currentOffset + triangleEdge2Offset;
+            vertices[edge2Offset + 0] = center[0] + radius[0] * (float) Math.cos(radsNext);
+            vertices[edge2Offset + 1] = center[1] + radius[1] * (float) Math.sin(radsNext);
+            vertices[edge2Offset + 2] = z;
+            vertices[edge2Offset + 3] =
+                    (vertices[edge2Offset + 0] - viewPort.left) / viewPort.width();
+            vertices[edge2Offset + 4] =
+                    (vertices[edge2Offset + 1] - viewPort.bottom) / -viewPort.height();
 
             // Index our triangles -- tell where each triangle vertex is
-            final int initialIdx = currentOffset / 5;
+            final int initialIdx = verticesOffset / 5;
             indices[indicesOffset + i * 3 + 0] = (short) (initialIdx);
-            indices[indicesOffset + i * 3 + 1] = (short) (initialIdx + 1);
-            indices[indicesOffset + i * 3 + 2] = (short) (initialIdx + 2);
+            indices[indicesOffset + i * 3 + 1] = (short) (initialIdx + i + 1);
+            indices[indicesOffset + i * 3 + 2] = (short) (initialIdx + i + 2);
         }
     }
 
